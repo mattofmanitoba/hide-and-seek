@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Game Replay — Jet Lag Hide & Seek</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0f1419; color: #fff; }
+  #map { position: fixed; inset: 0; }
+  #controls { position: fixed; bottom: 0; left: 0; right: 0; background: rgba(15,20,25,.92); padding: 12px 16px; z-index: 1000; backdrop-filter: blur(8px); }
+  #controls .row { display: flex; gap: 10px; align-items: center; margin-bottom: 8px; }
+  #controls .row:last-child { margin-bottom: 0; }
+  button { background: #1971c2; color: #fff; border: none; border-radius: 8px; padding: 10px 16px; font-size: 14px; font-weight: 600; cursor: pointer; }
+  button.secondary { background: #2c3644; }
+  button:disabled { opacity: .4; }
+  #timeLabel { font-variant-numeric: tabular-nums; font-size: 14px; min-width: 100px; }
+  #speedBtn { min-width: 64px; }
+  input[type=range] { flex: 1; }
+  #stats { position: fixed; top: 10px; right: 10px; background: rgba(15,20,25,.92); border-radius: 12px; padding: 12px 16px; z-index: 1000; max-width: 260px; backdrop-filter: blur(8px); }
+  #stats h3 { font-size: 14px; margin-bottom: 8px; color: #ffd43b; }
+  #stats .stat { font-size: 13px; margin-bottom: 4px; }
+  #stats .winner { color: #69db7c; font-weight: 700; }
+  #title { position: fixed; top: 10px; left: 10px; background: rgba(15,20,25,.92); border-radius: 12px; padding: 12px 16px; z-index: 1000; backdrop-filter: blur(8px); }
+  #title h2 { font-size: 16px; }
+  #title p { font-size: 12px; color: #aaa; }
+  #loading { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; z-index: 2000; background: #0f1419; font-size: 16px; }
+</style>
+</head>
+<body>
+<div id="loading">Loading game…</div>
+<div id="map"></div>
+<div id="title"><h2 id="gameName">Game Replay</h2><p id="gameDate"></p></div>
+<div id="stats"><h3>🏆 Results</h3><div id="statsBody">Loading…</div></div>
+<div id="controls">
+  <div class="row">
+    <button id="playBtn">▶ Play</button>
+    <button id="speedBtn" class="secondary">1×</button>
+    <input type="range" id="scrub" min="0" max="1000" value="0">
+    <span id="timeLabel">0:00</span>
+  </div>
+  <div class="row">
+    <button id="gpxBtn" class="secondary">📥 Export GPX</button>
+    <button id="shareBtn" class="secondary">🔗 Share</button>
+  </div>
+</div>
+<script>
+const SB_URL = 'https://wfvtbouqsbnxuqwslyug.supabase.co';
+const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndmdnRib3Vxc2JueHVxd3NseXVnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTE0MTgxOTUsImV4cCI6MjEwNjk5NDE5NX0.XgHqUWXgia_aFnw3XPh5-6iPrmmlGi3fIqVUKnr-cdk';
+const ZONE = [[49.8568,-97.1961],[49.8535,-97.1962],[49.84878,-97.1953],[49.84886,-97.19453],[49.84891,-97.19389],[49.84918,-97.19107],[49.84944,-97.18826],[49.84962,-97.18627],[49.84983,-97.18396],[49.85006,-97.18162],[49.85011,-97.18101],[49.85019,-97.1803],[49.85026,-97.17946],[49.85031,-97.17898],[49.85033,-97.17867],[49.85038,-97.17826],[49.8504,-97.17788],[49.85042,-97.17764],[49.85045,-97.17735],[49.85049,-97.17691],[49.85054,-97.17647],[49.85058,-97.17605],[49.85062,-97.17565],[49.85085,-97.17324],[49.85106,-97.17101],[49.85136,-97.16775],[49.85165,-97.16454],[49.85197,-97.16108],[49.8521,-97.15956],[49.85225,-97.15803],[49.85228,-97.1576],[49.85233,-97.15712],[49.85237,-97.15686],[49.85239,-97.15669],[49.85241,-97.15653],[49.85244,-97.15635],[49.85248,-97.1562],[49.8525,-97.15606],[49.85255,-97.15591],[49.85257,-97.15577],[49.85262,-97.15564],[49.85264,-97.15552],[49.85269,-97.1554],[49.85272,-97.15529],[49.85278,-97.15513],[49.85285,-97.15496],[49.85293,-97.15481],[49.853,-97.15463],[49.85316,-97.15436],[49.85341,-97.15401],[49.85362,-97.15368],[49.85394,-97.15324],[49.85422,-97.15283],[49.85452,-97.15244],[49.8547,-97.15217],[49.85496,-97.15185],[49.8551,-97.15166],[49.85531,-97.15146],[49.85543,-97.15134],[49.85552,-97.15126],[49.85556,-97.15122],[49.86015,-97.14936],[49.86474,-97.14749],[49.86461,-97.14734],[49.86465,-97.14731],[49.86469,-97.14735],[49.86475,-97.14727],[49.86481,-97.14724],[49.86488,-97.14721],[49.86494,-97.14718],[49.86502,-97.1471],[49.86509,-97.14713],[49.86516,-97.14711],[49.86523,-97.14703],[49.86533,-97.147],[49.86542,-97.14703],[49.86552,-97.147],[49.86564,-97.14702],[49.86574,-97.14699],[49.86586,-97.14701],[49.86596,-97.14693],[49.86606,-97.1469],[49.86614,-97.14683],[49.86623,-97.14686],[49.86632,-97.14678],[49.86641,-97.1468],[49.86651,-97.14673],[49.86661,-97.14675],[49.86672,-97.14667],[49.8668,-97.1467],[49.86687,-97.14664],[49.86697,-97.14661],[49.86708,-97.14658],[49.86718,-97.14655],[49.86727,-97.14652],[49.86737,-97.14649],[49.86743,-97.14652],[49.86748,-97.14645],[49.86754,-97.14642],[49.86759,-97.14639],[49.86765,-97.1464],[49.86772,-97.1463],[49.8678,-97.1463],[49.86787,-97.14625],[49.86796,-97.14613],[49.86804,-97.14607],[49.86811,-97.14602],[49.86817,-97.14597],[49.86825,-97.14596],[49.86834,-97.1459],[49.86844,-97.14582],[49.86855,-97.14579],[49.86867,-97.14565],[49.86876,-97.14553],[49.86882,-97.14553],[49.86888,-97.14544],[49.86893,-97.1454],[49.86897,-97.14537],[49.86901,-97.1454],[49.86905,-97.14531],[49.86909,-97.14533],[49.86916,-97.14528],[49.86924,-97.14527],[49.86933,-97.14515],[49.86945,-97.14506],[49.86955,-97.14498],[49.86965,-97.14491],[49.86971,-97.14488],[49.8698,-97.14482],[49.86985,-97.14483],[49.86991,-97.14474],[49.86996,-97.1447],[49.87002,-97.14466],[49.87007,-97.14463],[49.87011,-97.1446],[49.87014,-97.14465],[49.87018,-97.14464],[49.87025,-97.14458],[49.87028,-97.14456],[49.87032,-97.14452],[49.87038,-97.14449],[49.87042,-97.14443],[49.87046,-97.14441],[49.8705,-97.14439],[49.87054,-97.14437],[49.87058,-97.14436],[49.87066,-97.14434],[49.8707,-97.14433],[49.87075,-97.14438],[49.87082,-97.14435],[49.87088,-97.14426],[49.87094,-97.14423],[49.87099,-97.14421],[49.87105,-97.14412],[49.87114,-97.14402],[49.87121,-97.14406],[49.87128,-97.14408],[49.87136,-97.14407],[49.87142,-97.14405],[49.87145,-97.14408],[49.8715,-97.14407],[49.87157,-97.14407],[49.87165,-97.14404],[49.87172,-97.14401],[49.8718,-97.144],[49.87187,-97.14396],[49.87193,-97.14385],[49.87199,-97.14374],[49.87206,-97.14369],[49.87212,-97.14359],[49.87218,-97.14357],[49.87221,-97.14353],[49.87224,-97.14354],[49.87226,-97.14361],[49.8723,-97.14359],[49.87238,-97.14357],[49.87245,-97.14356],[49.87253,-97.14351],[49.87266,-97.1434],[49.87279,-97.14341],[49.8729,-97.14332],[49.87302,-97.14333],[49.87313,-97.14328],[49.8732,-97.14326],[49.87326,-97.14318],[49.87333,-97.14315],[49.87338,-97.14312],[49.87343,-97.14311],[49.87349,-97.14308],[49.87354,-97.14304],[49.87361,-97.14301],[49.87367,-97.143],[49.87371,-97.14297],[49.87376,-97.14296],[49.87381,-97.14287],[49.87387,-97.14284],[49.87392,-97.14279],[49.87397,-97.14285],[49.874,-97.14282],[49.87404,-97.14279],[49.87407,-97.14275],[49.8741,-97.14272],[49.87413,-97.14271],[49.87417,-97.14267],[49.8742,-97.14262],[49.87423,-97.14261],[49.87425,-97.14258],[49.87434,-97.14249],[49.87437,-97.14244],[49.8744,-97.14239],[49.87442,-97.14239],[49.87444,-97.14231],[49.87447,-97.14212],[49.87449,-97.14199],[49.87455,-97.14198],[49.87455,-97.142],[49.87456,-97.14207],[49.87465,-97.14226],[49.87477,-97.14221],[49.87489,-97.14239],[49.87498,-97.14255],[49.8751,-97.14272],[49.87562,-97.14286],[49.87576,-97.14297],[49.87585,-97.14305],[49.87618,-97.14331],[49.87648,-97.14355],[49.87667,-97.14371],[49.87684,-97.14386],[49.87701,-97.14398],[49.87706,-97.14405],[49.87712,-97.14408],[49.87718,-97.14414],[49.87724,-97.14418],[49.87731,-97.14428],[49.87741,-97.14439],[49.8775,-97.14457],[49.87758,-97.14466],[49.87766,-97.14483],[49.87774,-97.14493],[49.87778,-97.14504],[49.87784,-97.14514],[49.8779,-97.14525],[49.87796,-97.14535],[49.87803,-97.14546],[49.87808,-97.14553],[49.87812,-97.14555],[49.87819,-97.14564],[49.87825,-97.14567],[49.87844,-97.14585],[49.87862,-97.14597],[49.87881,-97.14615],[49.87898,-97.14626],[49.87916,-97.14642],[49.87919,-97.14642],[49.87927,-97.14651],[49.87936,-97.14654],[49.87945,-97.14661],[49.87955,-97.14665],[49.87972,-97.14681],[49.87983,-97.14686],[49.87995,-97.14695],[49.88006,-97.14707],[49.88016,-97.14717],[49.88019,-97.14717],[49.88024,-97.14724],[49.88031,-97.14733],[49.88039,-97.1474],[49.88047,-97.14743],[49.88056,-97.1475],[49.88066,-97.14758],[49.88077,-97.14766],[49.88087,-97.14771],[49.88101,-97.14781],[49.88113,-97.14793],[49.88124,-97.14798],[49.8813,-97.14802],[49.88138,-97.1481],[49.88141,-97.14812],[49.88147,-97.14812],[49.88151,-97.14817],[49.88157,-97.14817],[49.88161,-97.14819],[49.88166,-97.14821],[49.8817,-97.14825],[49.88175,-97.14824],[49.88179,-97.14828],[49.88184,-97.14827],[49.88189,-97.14831],[49.88193,-97.14829],[49.88178,-97.14784],[49.8818,-97.14724],[49.88191,-97.14588],[49.88206,-97.14446],[49.88223,-97.14333],[49.88245,-97.14241],[49.88277,-97.14143],[49.88325,-97.14024],[49.8839,-97.13877],[49.8845,-97.13742],[49.88507,-97.13583],[49.88538,-97.13453],[49.88564,-97.13309],[49.88575,-97.13186],[49.88579,-97.13027],[49.88575,-97.12863],[49.88573,-97.12764],[49.888,-97.127],[49.88849,-97.1256],[49.88887,-97.12566],[49.88955,-97.12586],[49.8901,-97.12619],[49.89063,-97.12666],[49.89135,-97.12725],[49.89215,-97.12787],[49.89314,-97.12867],[49.89414,-97.12956],[49.89515,-97.13045],[49.89599,-97.13102],[49.89668,-97.13125],[49.89736,-97.13125],[49.89801,-97.13104],[49.89862,-97.13057],[49.89914,-97.12991],[49.89963,-97.12881],[49.90002,-97.12358],[49.90032,-97.1191],[49.90069,-97.11889],[49.9012,-97.11412],[49.90161,-97.10918],[49.90213,-97.10881],[49.90277,-97.10861],[49.90337,-97.1087],[49.90388,-97.10903],[49.90423,-97.1095],[49.90454,-97.11012],[49.90468,-97.11044],[49.90475,-97.117],[49.90478,-97.123],[49.90484,-97.12946],[49.90489,-97.13],[49.90494,-97.13041],[49.90506,-97.13142],[49.90515,-97.1322],[49.90519,-97.13249],[49.90524,-97.1328],[49.90532,-97.13318],[49.90535,-97.1334],[49.90543,-97.13378],[49.9055,-97.13419],[49.90556,-97.13458],[49.90562,-97.1349],[49.90567,-97.13523],[49.90571,-97.13544],[49.90575,-97.13561],[49.90579,-97.13578],[49.90583,-97.13593],[49.90588,-97.1361],[49.90592,-97.13626],[49.90597,-97.13644],[49.90604,-97.13666],[49.90612,-97.1369],[49.90622,-97.13722],[49.90634,-97.13758],[49.90649,-97.13807],[49.90665,-97.13856],[49.90678,-97.13899],[49.90878,-97.14527],[49.9108,-97.1516],[49.91275,-97.15774],[49.91474,-97.16396],[49.91681,-97.17045],[49.91702,-97.17108],[49.91718,-97.17158],[49.9174,-97.17228],[49.91763,-97.173],[49.91787,-97.17374],[49.91813,-97.17455],[49.91798,-97.17533],[49.91787,-97.176],[49.91779,-97.17706],[49.9177,-97.17827],[49.91758,-97.17858],[49.91743,-97.18002],[49.91728,-97.18034],[49.91714,-97.18059],[49.91702,-97.18079],[49.91689,-97.18097],[49.91677,-97.18112],[49.91665,-97.18127],[49.91653,-97.1814],[49.91639,-97.18155],[49.91564,-97.18214],[49.91492,-97.18271],[49.91381,-97.18357],[49.91258,-97.18451],[49.91139,-97.18543],[49.91082,-97.18586],[49.91025,-97.1863],[49.90997,-97.18651],[49.9091,-97.18718],[49.90783,-97.18816],[49.90653,-97.18915],[49.90522,-97.19015],[49.904,-97.19108],[49.90347,-97.19147],[49.90333,-97.19157],[49.90318,-97.19166],[49.90304,-97.19175],[49.90289,-97.19184],[49.90274,-97.19192],[49.90259,-97.192],[49.90246,-97.19207],[49.90232,-97.19213],[49.90216,-97.1922],[49.90198,-97.19227],[49.9018,-97.19233],[49.90158,-97.1924],[49.90135,-97.19246],[49.90106,-97.19252],[49.90031,-97.1926],[49.89956,-97.19268],[49.89886,-97.19274],[49.89819,-97.1928],[49.89694,-97.1929],[49.89617,-97.19296],[49.89542,-97.19302],[49.89408,-97.19313],[49.89274,-97.19323],[49.89206,-97.19329],[49.89074,-97.19339],[49.88889,-97.19354],[49.88757,-97.19365],[49.88622,-97.19376],[49.88445,-97.1939],[49.88333,-97.19399],[49.88268,-97.19404],[49.88207,-97.19409],[49.88109,-97.19417],[49.88053,-97.19422],[49.87975,-97.19428],[49.8788,-97.19436],[49.87786,-97.19443],[49.8773,-97.19447],[49.87634,-97.19455],[49.8756,-97.19461],[49.8751,-97.19465],[49.87457,-97.19469],[49.87346,-97.19478],[49.87275,-97.19483],[49.87204,-97.19489],[49.87067,-97.195],[49.86933,-97.1951],[49.86858,-97.19516],[49.86721,-97.19527],[49.86584,-97.19538],[49.86512,-97.19544],[49.86441,-97.1955],[49.86238,-97.19566],[49.86095,-97.19577],[49.85953,-97.19588],[49.85849,-97.19596],[49.8568,-97.1961]];
+const NOGO = [
+  [49.915645, -97.15929],
+  [49.914339, -97.155769],
+  [49.911209, -97.14875],
+  [49.909618, -97.144279],
+  [49.907672, -97.145398],
+  [49.90503, -97.147309],
+  [49.900733, -97.133902],
+  [49.901191, -97.133543],
+  [49.901028, -97.13299],
+  [49.90184, -97.132258],
+  [49.901134, -97.129967],
+  [49.901701, -97.129366],
+  [49.90256, -97.131852],
+  [49.903458, -97.131536],
+  [49.902752, -97.127063],
+  [49.900366, -97.127991],
+  [49.900958, -97.1233],
+  [49.900571, -97.11654],
+  [49.900535, -97.111527],
+  [49.901681, -97.109083],
+  [49.903822, -97.109312],
+  [49.905093, -97.11341],
+  [49.907979, -97.120436],
+  [49.91034, -97.12505],
+  [49.913426, -97.127274],
+  [49.914891, -97.131745],
+  [49.916972, -97.131128],
+  [49.919526, -97.129061],
+  [49.926527, -97.151031],
+  [49.915645, -97.15929]
+];
+const SPEEDS = [1, 2, 4, 8, 16];
+let speedIdx = 0;
+let playing = false;
+let animId = null;
+let gameData = null; // {players: {name: {track: [{lat,lon,t,role}], color}}, startT, endT}
+let curT = 0;
+
+const params = new URLSearchParams(window.location.search);
+const gameCode = params.get('game');
+if (!gameCode) { document.getElementById('loading').textContent = 'No game specified.'; throw new Error('no game'); }
+
+const sb = supabase.createClient(SB_URL, SB_KEY);
+const map = L.map('map').setView([49.888, -97.145], 12);
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(map);
+L.polygon(ZONE, { color: '#1971c2', weight: 2, fillOpacity: 0.06 }).addTo(map);
+L.polygon(NOGO, { color: '#c92a2a', weight: 2, dashArray: '6,4', fillOpacity: 0.15 }).addTo(map);
+
+const COLORS = ['#e6492d', '#1971c2', '#2f9e44', '#9c36b5', '#e67700', '#0c8599'];
+const markers = {};
+const trackLines = {};
+
+function fmtDur(ms) {
+  const s = Math.floor(ms / 1000);
+  return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+}
+
+async function load() {
+  // Game info
+  const { data: game } = await sb.from('games').select('*').eq('room_code', gameCode).single();
+  if (game) {
+    document.getElementById('gameName').textContent = game.room_name || ('Game ' + gameCode.slice(0, 8));
+    document.getElementById('gameDate').textContent = new Date(game.created_at).toLocaleDateString();
+  }
+  // Positions
+  const { data: pos } = await sb.from('positions').select('*').eq('room_code', gameCode).order('recorded_at');
+  if (!pos || pos.length === 0) {
+    document.getElementById('loading').textContent = 'No track data for this game yet.';
+    return;
+  }
+  // Group by player
+  const players = {};
+  let ci = 0;
+  pos.forEach(p => {
+    if (!players[p.player_name]) players[p.player_name] = { track: [], color: COLORS[ci++ % COLORS.length] };
+    players[p.player_name].track.push({ lat: p.lat, lon: p.lon, t: new Date(p.recorded_at).getTime(), role: p.role });
+  });
+  const allT = pos.map(p => new Date(p.recorded_at).getTime());
+  gameData = { players, startT: Math.min(...allT), endT: Math.max(...allT) };
+  curT = gameData.startT;
+
+  // Draw full tracks (faint) and markers
+  Object.entries(players).forEach(([name, pd]) => {
+    const latlngs = pd.track.map(p => [p.lat, p.lon]);
+    trackLines[name] = L.polyline(latlngs, { color: pd.color, weight: 2, opacity: 0.25 }).addTo(map);
+    const icon = L.divIcon({ className: '', html: `<div style="background:${pd.color};color:#fff;border-radius:12px;padding:3px 8px;font-size:11px;font-weight:700;white-space:nowrap;border:2px solid #fff">${name}</div>`, iconSize: [0,0] });
+    markers[name] = L.marker(latlngs[0], { icon }).addTo(map);
+  });
+  map.fitBounds(L.polygon(ZONE).getBounds().pad(0.05));
+
+  // Stats: hider durations
+  const stats = [];
+  Object.entries(players).forEach(([name, pd]) => {
+    let hideMs = 0, curStart = null, longest = 0;
+    pd.track.forEach(p => {
+      if (p.role === 'hider' && curStart === null) curStart = p.t;
+      if (p.role !== 'hider' && curStart !== null) {
+        const d = p.t - curStart; hideMs += d; longest = Math.max(longest, d); curStart = null;
+      }
+    });
+    if (curStart !== null) { const d = pd.track[pd.track.length-1].t - curStart; hideMs += d; longest = Math.max(longest, d); }
+    stats.push({ name, hideMs, longest, color: pd.color });
+  });
+  stats.sort((a, b) => b.longest - a.longest);
+  const sb2 = document.getElementById('statsBody');
+  sb2.innerHTML = stats.map((s, i) =>
+    `<div class="stat ${i===0?'winner':''}">${i===0?'👑 ':''}${i+1}. ${s.name} — hid ${fmtDur(s.longest)}</div>`
+  ).join('') || '<div class="stat">No hider data</div>';
+
+  document.getElementById('loading').style.display = 'none';
+  updateTime();
+}
+
+function interpTrack(track, t) {
+  if (t <= track[0].t) return track[0];
+  for (let i = 1; i < track.length; i++) {
+    if (track[i].t >= t) {
+      const a = track[i-1], b = track[i];
+      const f = (t - a.t) / Math.max(1, b.t - a.t);
+      return { lat: a.lat + (b.lat - a.lat) * f, lon: a.lon + (b.lon - a.lon) * f };
+    }
+  }
+  return track[track.length - 1];
+}
+
+function updateTime() {
+  const el = Math.floor((curT - gameData.startT) / 1000);
+  document.getElementById('timeLabel').textContent = fmtDur(curT - gameData.startT);
+  document.getElementById('scrub').value = 1000 * (curT - gameData.startT) / Math.max(1, gameData.endT - gameData.startT);
+  Object.entries(gameData.players).forEach(([name, pd]) => {
+    const p = interpTrack(pd.track, curT);
+    markers[name].setLatLng([p.lat, p.lon]);
+  });
+}
+
+let lastFrame = 0;
+function tick(ts) {
+  if (!playing) return;
+  if (!lastFrame) lastFrame = ts;
+  const dt = (ts - lastFrame) * SPEEDS[speedIdx];
+  lastFrame = ts;
+  curT += dt;
+  if (curT >= gameData.endT) { curT = gameData.endT; pause(); }
+  updateTime();
+  animId = requestAnimationFrame(tick);
+}
+function play() { playing = true; lastFrame = 0; document.getElementById('playBtn').textContent = '⏸ Pause'; animId = requestAnimationFrame(tick); }
+function pause() { playing = false; document.getElementById('playBtn').textContent = '▶ Play'; cancelAnimationFrame(animId); }
+
+document.getElementById('playBtn').addEventListener('click', () => {
+  if (!gameData) return;
+  if (curT >= gameData.endT) curT = gameData.startT;
+  playing ? pause() : play();
+});
+document.getElementById('speedBtn').addEventListener('click', e => {
+  speedIdx = (speedIdx + 1) % SPEEDS.length;
+  e.target.textContent = SPEEDS[speedIdx] + '×';
+});
+document.getElementById('scrub').addEventListener('input', e => {
+  if (!gameData) return;
+  pause();
+  curT = gameData.startT + (e.target.value / 1000) * (gameData.endT - gameData.startT);
+  updateTime();
+});
+document.getElementById('shareBtn').addEventListener('click', async () => {
+  const url = window.location.href;
+  if (navigator.share) { try { await navigator.share({ title: 'Game Replay', url }); } catch (e) {} }
+  else { try { await navigator.clipboard.writeText(url); alert('Link copied!'); } catch (e) { prompt('Copy link:', url); } }
+});
+document.getElementById('gpxBtn').addEventListener('click', () => {
+  if (!gameData) return;
+  let gpx = `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="JetLagHideSeek">\n`;
+  Object.entries(gameData.players).forEach(([name, pd]) => {
+    gpx += ` <trk><name>${name}</name><trkseg>\n`;
+    pd.track.forEach(p => {
+      gpx += `  <trkpt lat="${p.lat}" lon="${p.lon}"><time>${new Date(p.t).toISOString()}</time></trkpt>\n`;
+    });
+    gpx += ` </trkseg></trk>\n`;
+  });
+  gpx += `</gpx>`;
+  const blob = new Blob([gpx], { type: 'application/gpx+xml' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'game-' + gameCode.slice(0, 8) + '.gpx';
+  document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+});
+
+load();
+</script>
+</body>
+</html>
